@@ -27,6 +27,72 @@ export const Colors = {
   },
 };
 
+/**
+ * Application-specific color palette
+ * Extracted from component stylesheets to ensure consistency
+ */
+export const AppColors = {
+  // Primary colors
+  primary: '#0d9488',
+  primaryLight: '#14b8a6',
+  primaryDark: '#0f766e',
+  
+  // Secondary/accent colors
+  accent: '#facc15',
+  accentLight: '#fde68a',
+  
+  // Status colors
+  success: '#22c55e',
+  successDark: '#16a34a',
+  danger: '#ef4444',
+  dangerDark: '#dc2626',
+  warning: '#f59e0b',
+  warningDark: '#d97706',
+  
+  // Background colors
+  backgroundLight: '#f5f5f4',
+  backgroundDark: '#0f172a',
+  cardLight: '#FFFFFF',
+  cardDark: '#1e293b',
+  heroBackground: '#eff6ff',
+  
+  // Text colors
+  textPrimary: '#0F172A',
+  textSecondary: '#475569',
+  textTertiary: '#64748b',
+  textQuaternary: '#94a3b8',
+  textLight: '#FFFFFF',
+  textGray: '#6b7280',
+  textMuted: '#9ca3af',
+  
+  // Border colors
+  border: '#E2E8F0',
+  borderDark: '#CBD5E1',
+  borderActive: '#334155',
+  
+  // State-specific colors
+  taken: '#DCFCE7',
+  takenBorder: '#166534',
+  takenText: '#166534',
+  missed: '#FEF2F2',
+  missedBorder: '#DC2626',
+  missedBackground: '#FEE2E2',
+  
+  // Pastel colors for medication avatars
+  avatarColors: [
+    '#FECACA', // Soft Red
+    '#FED7AA', // Warm Orange
+    '#FDE68A', // Soft Yellow
+    '#D9F99D', // Light Lime
+    '#A7F3D0', // Mint Green
+    '#A5F3FC', // Teal
+    '#DDD6FE', // Pastel Purple
+    '#FBCFE8', // Pink
+    '#FCA5A5', // Coral
+    '#FCD34D', // Golden
+  ] as const,
+} as const;
+
 export const Fonts = Platform.select({
   ios: {
     /** iOS `UIFontDescriptorSystemDesignDefault` */

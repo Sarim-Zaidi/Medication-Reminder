@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "medication-reminder-app",
-    "slug": "medication-reminder-app",
+    "slug": "medication-reminder",
+    "owner": "agiz-labs",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -12,6 +13,17 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.zaidi.medreminder",
+      "permissions": [
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.FOREGROUND_SERVICE"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -26,6 +38,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "./withAndroidWakeLock.js",
       "expo-router",
       [
         "expo-splash-screen",
@@ -43,6 +56,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "4f91ddb6-c72d-4a95-8f20-ccfd8af57469"
+      }
     }
   }
 }

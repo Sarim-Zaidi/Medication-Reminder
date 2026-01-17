@@ -37,6 +37,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    paddingVertical: 12,
+    minHeight: 44,
   },
   content: {
     marginTop: 6,

@@ -23,8 +23,9 @@ import notifee, {
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
-export const NOTIFEE_CHANNEL_ID = 'critical_meds_v2';
-const NOTIFEE_SOUND = 'alarm_sound';
+// CRITICAL: Change channel ID to force Android to register fresh channel with new settings
+export const NOTIFEE_CHANNEL_ID = 'medication-alerts-v3';
+const NOTIFEE_SOUND = 'default'; // Use system default for reliability
 const ALARM_TIMEOUT_MS = 60000; // Stop ringing after 60s to prevent battery drain
 
 /**
@@ -242,27 +243,31 @@ export async function checkNotificationPermissions(): Promise<boolean> {
 
 /**
  * Initialize Notifee alarm channel for Android
- * Creates/updates channel with HIGH importance for full-screen intent support
+ * Creates/updates channel with HIGH importance for trigger event support
  */
 export async function initNotifeeAlarmChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
 
   try {
-    // Always recreate channel to ensure proper settings
-    console.log('🔔 Creating/updating alarm channel: critical_meds_v2');
+    // CRITICAL: Force create new high-priority channel
+    console.log('🔔 ========================================');
+    console.log('🔔 Creating HIGH-PRIORITY channel:', NOTIFEE_CHANNEL_ID);
+    console.log('🔔 ========================================');
+
     await notifee.createChannel({
       id: NOTIFEE_CHANNEL_ID,
-      name: 'Critical Alarms',
-      importance: AndroidImportance.HIGH,
-      sound: NOTIFEE_SOUND,
-      vibration: true,
-      vibrationPattern: [300, 500, 200, 500, 200, 500],
+      name: 'Medication Alerts',
+      importance: AndroidImportance.HIGH, // CRITICAL: HIGH for trigger events
+      sound: 'default', // CRITICAL: Use system default sound
+      vibration: true, // CRITICAL: Enable vibration
+      vibrationPattern: [300, 500, 200, 500],
       lights: true,
       lightColor: NOTIFICATION_LIGHT_COLOR,
-      bypassDnd: true,
+      bypassDnd: true, // Bypass Do Not Disturb
       visibility: AndroidVisibility.PUBLIC,
     });
-    console.log('✅ Alarm channel created with HIGH importance');
+
+    console.log('✅ Channel created successfully with HIGH importance');
     logger.debug('Notifee alarm channel initialized/updated');
   } catch (error) {
     logger.error('Failed to create Notifee channel', error);
@@ -316,10 +321,11 @@ export async function displayAlarmNotification(
 
   // DEBUG: Aggressive logging for troubleshooting
   console.log('🚨 ========================================');
-  console.log('🚨 TRIGGERING ALARM NOW...');
+  console.log('🚨 DISPLAYING ALARM NOTIFICATION');
   console.log('🚨 Channel:', NOTIFEE_CHANNEL_ID);
   console.log('🚨 Notification ID:', notificationId);
   console.log('🚨 Medication:', data.name, '-', data.dosage);
+  console.log('🚨 Sound:', NOTIFEE_SOUND);
   console.log('🚨 ========================================');
 
   // 4. Display with all critical flags
@@ -346,7 +352,7 @@ export async function displayAlarmNotification(
         loopSound: true,
         autoCancel: false,
         asForegroundService: false,
-        sound: NOTIFEE_SOUND,
+        sound: 'default',
         timeoutAfter: ALARM_TIMEOUT_MS,
         actions: [
           { title: 'Take Now', pressAction: { id: 'take' } },
@@ -407,6 +413,15 @@ export async function scheduleNotifeeAlarm(
     },
   };
 
+  // DEBUG: Log scheduling details
+  console.log('⏰ ========================================');
+  console.log('⏰ SCHEDULING TRIGGER NOTIFICATION');
+  console.log('⏰ Channel:', NOTIFEE_CHANNEL_ID);
+  console.log('⏰ Notification ID:', notificationId);
+  console.log('⏰ Medication:', data.name);
+  console.log('⏰ Trigger Time:', new Date(timestamp).toLocaleString());
+  console.log('⏰ ========================================');
+
   await notifee.createTriggerNotification(
     {
       id: notificationId,
@@ -430,7 +445,7 @@ export async function scheduleNotifeeAlarm(
         loopSound: true,
         autoCancel: false,
         asForegroundService: false,
-        sound: NOTIFEE_SOUND,
+        sound: 'default',
         timeoutAfter: ALARM_TIMEOUT_MS,
         actions: [
           { title: 'Take Now', pressAction: { id: 'take' } },

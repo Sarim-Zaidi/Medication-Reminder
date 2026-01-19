@@ -16,6 +16,7 @@
   ],
   "exclude": [
     "node_modules",
-    "seniorpill---simple-medication-reminder/**"
+    "seniorpill---simple-medication-reminder/**",
+    "supabase/functions/**"
   ]
 }

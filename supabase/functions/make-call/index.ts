@@ -288,6 +288,13 @@ async function handleIVRResponse(req: Request, url: URL): Promise<Response> {
     const userName = escapeXML(url.searchParams.get('userName') || 'there');
     const medicationName = escapeXML(url.searchParams.get('medicationName') || 'medication');
 
+    console.log('🔍 Extracted from URL query params:', { 
+      medicationId: medicationId || '(null)',
+      logId: logId || '(null)',
+      userName,
+      medicationName
+    });
+
     // Parse form data from Twilio webhook
     const formData = await req.formData();
     const speechResult = formData.get('SpeechResult')?.toString().toLowerCase() || '';
@@ -307,7 +314,10 @@ async function handleIVRResponse(req: Request, url: URL): Promise<Response> {
 
       // Update database if we have the IDs
       if (medicationId || logId) {
+        console.log('💾 Triggering database update with:', { medicationId, logId });
         await updateMedicationStatus(medicationId, logId, 'taken');
+      } else {
+        console.warn('⚠️ Cannot update database - both medicationId and logId are null');
       }
 
       responseTwiml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -392,9 +402,13 @@ async function handleIVRResponse(req: Request, url: URL): Promise<Response> {
 
 /**
  * Update medication status in database
+ * 
+ * Schema: medications table has 'is_taken' (boolean) column, NOT 'last_taken_at'
  */
 async function updateMedicationStatus(medicationId: string | null, logId: string | null, status: string): Promise<void> {
   try {
+    console.log('💾 Attempting DB update:', { medicationId, logId, status });
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
@@ -405,8 +419,17 @@ async function updateMedicationStatus(medicationId: string | null, logId: string
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Prioritize medicationId since logId is often empty
+    const targetId = medicationId || logId;
+    
+    if (!targetId) {
+      console.warn('⚠️ No ID available for database update (both medicationId and logId are null)');
+      return;
+    }
+
     if (logId) {
-      // Update medication log entry
+      // Update medication log entry (if logs table exists and has logId)
+      console.log('💾 Updating medication_logs table...');
       const { error } = await supabase
         .from('medication_logs')
         .update({ status, taken_at: new Date().toISOString() })
@@ -417,20 +440,34 @@ async function updateMedicationStatus(medicationId: string | null, logId: string
       } else {
         console.log('✅ Medication log updated:', { logId, status });
       }
-    } else if (medicationId) {
-      // Update medication record directly (fallback)
+    }
+    
+    // Always update medications table if we have medicationId
+    if (medicationId) {
+      console.log('💾 Updating medications table...');
+      console.log('💾 Target medication ID:', medicationId);
+      
+      // CRITICAL: Only update 'is_taken' column (last_taken_at does NOT exist in schema)
       const { error } = await supabase
         .from('medications')
-        .update({ is_taken: true, last_taken_at: new Date().toISOString() })
+        .update({ is_taken: true })
         .eq('id', medicationId);
 
       if (error) {
-        console.error('❌ Failed to update medication:', error);
+        console.error('❌ Failed to update medication:', {
+          error: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
       } else {
-        console.log('✅ Medication updated:', { medicationId, status });
+        console.log('✅ Medication updated successfully:', { medicationId, is_taken: true });
       }
     }
   } catch (error) {
-    console.error('❌ Database update error:', error);
+    console.error('❌ Database update exception:', {
+      error: (error as Error).message,
+      stack: (error as Error).stack
+    });
   }
 }

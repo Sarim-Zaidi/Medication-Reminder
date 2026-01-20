@@ -5,6 +5,8 @@ interface TriggerCallParams {
   phoneNumber: string;
   userName: string;
   medicationName: string;
+  medicationId?: string;
+  logId?: string;
 }
 
 interface TriggerCallResult {

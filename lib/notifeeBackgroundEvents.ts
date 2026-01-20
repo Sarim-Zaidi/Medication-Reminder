@@ -66,11 +66,13 @@ if (!globalFlags.__notifeeBackgroundHandlerRegistered) {
             const sanitizedPhone = sanitizePhoneNumber(phoneNumber);
             console.log('📞 Original phone:', phoneNumber);
             console.log('📞 Sanitized phone:', sanitizedPhone);
+            console.log('📞 Medication ID:', data?.medicationId);
             
             await triggerMedicationCall({
               phoneNumber: sanitizedPhone,
               userName,
               medicationName: data.name,
+              medicationId: data?.medicationId, // Pass for IVR database update
             });
             
             // Update last trigger timestamp after successful call

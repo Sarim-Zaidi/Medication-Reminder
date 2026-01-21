@@ -26,9 +26,18 @@ const corsHeaders = {
 // TYPE DEFINITIONS
 // ============================================================================
 
+interface MedicationItem {
+  id: string;
+  name: string;
+  logId?: string;
+}
+
 interface CallRequestBody {
   phoneNumber: string;
   userName?: string;
+  // New batched format
+  medications?: MedicationItem[];
+  // Legacy single-medication format (backward compatibility)
   medicationName?: string;
   medicationId?: string;
   logId?: string;
@@ -53,6 +62,45 @@ function escapeXML(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
+}
+
+/**
+ * Convert array of medication names to natural spoken string
+ * ['Panadol'] -> "Panadol"
+ * ['Panadol', 'Insulin'] -> "Panadol and Insulin"
+ * ['A', 'B', 'C'] -> "A, B, and C"
+ */
+function createSpokenList(items: string[]): string {
+  if (items.length === 0) return 'your medications';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  
+  const lastItem = items[items.length - 1];
+  const otherItems = items.slice(0, -1);
+  return `${otherItems.join(', ')}, and ${lastItem}`;
+}
+
+/**
+ * Normalize request body to batch format
+ * Supports both new batched format and legacy single-medication format
+ */
+function normalizeToBatch(body: CallRequestBody): { medications: MedicationItem[], userName: string, phoneNumber: string } {
+  const userName = body.userName || 'there';
+  const phoneNumber = body.phoneNumber;
+  
+  // If new batched format is provided
+  if (body.medications && Array.isArray(body.medications) && body.medications.length > 0) {
+    return { medications: body.medications, userName, phoneNumber };
+  }
+  
+  // Fallback: convert legacy single-medication format to batch
+  const singleMed: MedicationItem = {
+    id: body.medicationId || '',
+    name: body.medicationName || 'your medication',
+    logId: body.logId,
+  };
+  
+  return { medications: [singleMed], userName, phoneNumber };
 }
 
 /**
@@ -194,12 +242,22 @@ serve(async (req) => {
 /**
  * FLOW A: Initial Call
  * Creates the outbound call with IVR prompt using zero-dependency approach
+ * Supports batched medications (multiple meds in one call)
  */
 async function handleInitialCall(req: Request): Promise<Response> {
   try {
     console.log('🎯 handleInitialCall: Starting...');
-    const { phoneNumber, userName, medicationName, medicationId, logId } = await req.json() as CallRequestBody;
-    console.log('🎯 handleInitialCall: Request body parsed:', { phoneNumber, userName, medicationName, medicationId, logId });
+    const body = await req.json() as CallRequestBody;
+    
+    // Normalize to batch format (supports both new and legacy formats)
+    const { medications, userName, phoneNumber } = normalizeToBatch(body);
+    
+    console.log('🎯 handleInitialCall: Normalized batch:', { 
+      phoneNumber, 
+      userName, 
+      medicationCount: medications.length,
+      medications: medications.map(m => ({ id: m.id, name: m.name }))
+    });
 
     // Get Twilio credentials
     const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
@@ -216,8 +274,33 @@ async function handleInitialCall(req: Request): Promise<Response> {
       throw new Error('SUPABASE_URL environment variable not set');
     }
 
-    // Build callback URL with context
-    const callbackUrl = `${origin}/functions/v1/make-call?flow=process_response&medicationId=${encodeURIComponent(medicationId || '')}&logId=${encodeURIComponent(logId || '')}&userName=${encodeURIComponent(userName || 'User')}&medicationName=${encodeURIComponent(medicationName || 'medication')}`;
+    // Extract IDs for batch update
+    const medicationIds = medications.map(m => m.id).filter(id => id);
+    const logIds = medications.map(m => m.logId).filter((id): id is string => !!id);
+    const medicationNames = medications.map(m => m.name);
+    
+    // CRITICAL: Escape medication names for XML safety FIRST
+    const safeMedicationNames = medicationNames.map(n => escapeXML(n));
+    
+    // Create natural spoken list from safe names
+    const spokenList = createSpokenList(safeMedicationNames);
+    const safeName = escapeXML(userName);
+    
+    // Determine singular/plural phrasing
+    const isBatch = medications.length > 1;
+    const themOrIt = isBatch ? 'all of them' : 'it';
+    const batchLabel = isBatch ? 'your medications: ' : '';
+    
+    console.log('🔒 Sanitized values for TwiML:', { safeName, spokenList, isBatch, medicationCount: medications.length });
+    console.log('🔒 Medication IDs for callback:', medicationIds);
+
+    // Build callback URL with batched IDs (comma-separated)
+    const callbackUrl = `${origin}/functions/v1/make-call?flow=process_response` +
+      `&medicationIds=${encodeURIComponent(medicationIds.join(','))}` +
+      `&logIds=${encodeURIComponent(logIds.join(','))}` +
+      `&userName=${encodeURIComponent(userName)}` +
+      `&medicationNames=${encodeURIComponent(medicationNames.join(','))}` +
+      `&count=${medications.length}`;
 
     // CRITICAL: Escape ampersands for valid XML
     const xmlSafeCallbackUrl = callbackUrl.replace(/&/g, '&amp;');
@@ -225,19 +308,18 @@ async function handleInitialCall(req: Request): Promise<Response> {
     // Debug: Verify the URL is public
     console.log('🔗 Origin:', origin);
     console.log('🔗 Generated callback URL:', callbackUrl);
-    console.log('🔗 XML-safe callback URL:', xmlSafeCallbackUrl);
 
-    console.log('🎯 Generating TwiML for flow: initial');
-    // Generate TwiML with IVR
+    console.log('🎯 Generating TwiML for batched IVR');
+    // Generate TwiML with IVR (personalized with medication names)
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
   <Gather input="speech dtmf" timeout="5" numDigits="1" action="${xmlSafeCallbackUrl}" method="POST" speechTimeout="auto">
     <Say voice="alice">
-      Hello! It is time for your medication. Did you take it? Press 1 for Yes, or Press 2 for No.
+      Hello ${safeName}. It is time to take ${batchLabel}${spokenList}. Did you take ${themOrIt}? Press 1 for Yes, or Press 2 for No.
     </Say>
   </Gather>
-  <Say voice="alice">No response received. Please take your medication soon. Goodbye.</Say>
+  <Say voice="alice">No response received. Please take your medications soon. Goodbye.</Say>
   <Hangup/>
 </Response>`;
 
@@ -256,7 +338,7 @@ async function handleInitialCall(req: Request): Promise<Response> {
     console.log('✅ Returning success response to app');
 
     return new Response(
-      JSON.stringify({ success: true, callSid: call.sid }),
+      JSON.stringify({ success: true, callSid: call.sid, medicationCount: medications.length }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
@@ -277,22 +359,38 @@ async function handleInitialCall(req: Request): Promise<Response> {
 /**
  * FLOW B: Process IVR Response
  * Handles the Twilio webhook callback with user's response
+ * Supports batched medication updates
  */
 async function handleIVRResponse(req: Request, url: URL): Promise<Response> {
   try {
     console.log('🎯 handleIVRResponse: Starting...');
     
-    // Get context from query params
-    const medicationId = url.searchParams.get('medicationId');
-    const logId = url.searchParams.get('logId');
+    // Get context from query params (batch format)
+    const medicationIdsStr = url.searchParams.get('medicationIds') || '';
+    const logIdsStr = url.searchParams.get('logIds') || '';
+    const medicationNamesStr = url.searchParams.get('medicationNames') || '';
+    const countStr = url.searchParams.get('count') || '1';
     const userName = escapeXML(url.searchParams.get('userName') || 'there');
-    const medicationName = escapeXML(url.searchParams.get('medicationName') || 'medication');
+    
+    // Parse comma-separated IDs into arrays
+    const medicationIds = medicationIdsStr ? medicationIdsStr.split(',').filter(id => id) : [];
+    const logIds = logIdsStr ? logIdsStr.split(',').filter(id => id) : [];
+    const medicationNames = medicationNamesStr ? medicationNamesStr.split(',') : [];
+    const count = parseInt(countStr, 10) || 1;
+    
+    // Create spoken list for response
+    const spokenList = createSpokenList(medicationNames.map(n => escapeXML(n)));
+    const isBatch = count > 1;
+    const themOrIt = isBatch ? 'all of them' : 'it';
+    const yourMeds = isBatch ? 'your medications' : spokenList;
 
     console.log('🔍 Extracted from URL query params:', { 
-      medicationId: medicationId || '(null)',
-      logId: logId || '(null)',
+      medicationIds,
+      logIds,
+      medicationNames,
+      count,
       userName,
-      medicationName
+      isBatch
     });
 
     // Parse form data from Twilio webhook
@@ -300,7 +398,11 @@ async function handleIVRResponse(req: Request, url: URL): Promise<Response> {
     const speechResult = formData.get('SpeechResult')?.toString().toLowerCase() || '';
     const digits = formData.get('Digits')?.toString() || '';
 
-    console.log('📞 IVR Response received:', { speechResult, digits, medicationId, logId });
+    console.log('📞 IVR Response received:', { speechResult, digits, medicationIds, logIds });
+
+    // Log user input for debugging
+    console.log('📞 User pressed:', digits || '(none)');
+    console.log('📞 User said:', speechResult || '(none)');
 
     // Determine user's response
     const saidYes = speechResult.includes('yes') || speechResult.includes('took') || speechResult.includes('done') || digits === '1';
@@ -308,38 +410,59 @@ async function handleIVRResponse(req: Request, url: URL): Promise<Response> {
 
     let responseTwiml: string;
 
+    // ============================================================================
+    // CASE 1: User pressed "1" (Yes) - Update DB
+    // ============================================================================
     if (saidYes) {
-      // User confirmed they took medication
-      console.log('✅ User confirmed medication taken');
+      // User confirmed they took medication(s)
+      console.log('✅ User pressed 1 (Yes). Updating DB to mark medications as taken.');
+      console.log('✅ Medication IDs to update:', medicationIds);
+      console.log('✅ Medication names:', medicationNames);
 
-      // Update database if we have the IDs
-      if (medicationId || logId) {
-        console.log('💾 Triggering database update with:', { medicationId, logId });
-        await updateMedicationStatus(medicationId, logId, 'taken');
+      // Update database if we have IDs
+      if (medicationIds.length > 0) {
+        console.log(`💾 Triggering batch database update for ${medicationIds.length} medications`);
+        console.log('💾 IDs being sent to update function:', medicationIds);
+        await updateMedicationStatusBatch(medicationIds, logIds, 'taken');
+        console.log('💾 Update function completed');
       } else {
-        console.warn('⚠️ Cannot update database - both medicationId and logId are null');
+        console.error('❌ CRITICAL: Cannot update database - no medication IDs available!');
+        console.error('❌ This means medications will NOT be marked as taken');
+        console.error('❌ medicationIds:', medicationIds);
+        console.error('❌ logIds:', logIds);
       }
 
+      const markedMessage = isBatch 
+        ? `I've marked ${count} medications as taken` 
+        : `I've marked ${spokenList} as taken`;
+
       responseTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">
-    Great job ${userName}! I've marked ${medicationName} as taken. Take care and stay healthy!
+    Great job ${userName}! ${markedMessage}. Take care and stay healthy!
   </Say>
   <Hangup/>
 </Response>`;
 
+    // ============================================================================
+    // CASE 2: User pressed "2" (No) - DO NOT update DB
+    // ============================================================================
     } else if (saidNo) {
-      // User said they haven't taken it
-      console.log('⚠️ User has not taken medication');
+      // User said they haven't taken it - keep medications as pending
+      console.log('⚠️ User pressed 2 (No). Keeping medications as pending.');
+      console.log('⚠️ NO database update performed - medications remain untaken.');
 
       responseTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">
-    Okay ${userName}. Please remember to take your ${medicationName} soon. It's important for your health. Goodbye.
+    Okay. I will keep them as pending. Please open the app to mark them when you take them. Goodbye.
   </Say>
   <Hangup/>
 </Response>`;
 
+    // ============================================================================
+    // CASE 3: Invalid input - Retry or give up
+    // ============================================================================
     } else {
       // Unclear response - ask again (one retry)
       const retryAttempt = url.searchParams.get('retry');
@@ -347,35 +470,40 @@ async function handleIVRResponse(req: Request, url: URL): Promise<Response> {
       console.log('🔗 Retry origin:', origin);
       
       if (retryAttempt === '1') {
-        // Already retried once, give up
+        // Already retried once, give up with "invalid input" message
+        console.log('❌ Invalid input after retry. Giving up.');
         responseTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">
-    I'm having trouble understanding. Please take your ${medicationName} when you can. Goodbye.
+    Invalid input. Please take ${yourMeds} when you can. Goodbye.
   </Say>
   <Hangup/>
 </Response>`;
       } else {
-        // Retry once - use public URL
-        const retryUrl = `${origin}/functions/v1/make-call?flow=process_response&medicationId=${encodeURIComponent(medicationId || '')}&logId=${encodeURIComponent(logId || '')}&userName=${encodeURIComponent(userName)}&medicationName=${encodeURIComponent(medicationName)}&retry=1`;
+        // Retry once - use public URL with all batch params
+        const retryUrl = `${origin}/functions/v1/make-call?flow=process_response` +
+          `&medicationIds=${encodeURIComponent(medicationIds.join(','))}` +
+          `&logIds=${encodeURIComponent(logIds.join(','))}` +
+          `&userName=${encodeURIComponent(userName)}` +
+          `&medicationNames=${encodeURIComponent(medicationNames.join(','))}` +
+          `&count=${count}&retry=1`;
         
         // CRITICAL: Escape ampersands for valid XML
         const xmlSafeRetryUrl = retryUrl.replace(/&/g, '&amp;');
         
         console.log('🔗 Generated retry URL:', retryUrl);
-        console.log('🔗 XML-safe retry URL:', xmlSafeRetryUrl);
 
         responseTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">I didn't quite catch that.</Say>
   <Gather input="speech dtmf" timeout="5" numDigits="1" action="${xmlSafeRetryUrl}" method="POST" speechTimeout="auto">
     <Say voice="alice">
-      Did you take your ${medicationName}?
-      Say Yes or press 1.
-      Say No or press 2.
+      Did you take ${themOrIt}?
+      Press 1 for Yes.
+      Press 2 for No.
     </Say>
   </Gather>
-  <Say voice="alice">No response received. Please take your medication soon. Goodbye.</Say>
+  <Say voice="alice">No response received. Please take your medications soon. Goodbye.</Say>
   <Hangup/>
 </Response>`;
       }
@@ -401,13 +529,20 @@ async function handleIVRResponse(req: Request, url: URL): Promise<Response> {
 }
 
 /**
- * Update medication status in database
+ * Update medication status in database (BATCH version)
  * 
- * Schema: medications table has 'is_taken' (boolean) column, NOT 'last_taken_at'
+ * Uses .in() to update multiple records at once
+ * Schema: medications table has 'is_taken' (boolean) column
+ * 
+ * IMPORTANT: Only medications table exists (no separate logs table)
  */
-async function updateMedicationStatus(medicationId: string | null, logId: string | null, status: string): Promise<void> {
+async function updateMedicationStatusBatch(
+  medicationIds: string[], 
+  logIds: string[], 
+  status: string
+): Promise<void> {
   try {
-    console.log('💾 Attempting DB update:', { medicationId, logId, status });
+    console.log('💾 Attempting batch DB update:', { medicationIds, logIds, status });
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -419,53 +554,36 @@ async function updateMedicationStatus(medicationId: string | null, logId: string
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Prioritize medicationId since logId is often empty
-    const targetId = medicationId || logId;
-    
-    if (!targetId) {
-      console.warn('⚠️ No ID available for database update (both medicationId and logId are null)');
-      return;
-    }
-
-    if (logId) {
-      // Update medication log entry (if logs table exists and has logId)
-      console.log('💾 Updating medication_logs table...');
-      const { error } = await supabase
-        .from('medication_logs')
-        .update({ status, taken_at: new Date().toISOString() })
-        .eq('id', logId);
-
-      if (error) {
-        console.error('❌ Failed to update medication log:', error);
-      } else {
-        console.log('✅ Medication log updated:', { logId, status });
-      }
-    }
-    
-    // Always update medications table if we have medicationId
-    if (medicationId) {
-      console.log('💾 Updating medications table...');
-      console.log('💾 Target medication ID:', medicationId);
+    // CRITICAL: Only medications table exists (no medication_logs table)
+    // Update medications table with ALL IDs in the batch
+    if (medicationIds.length > 0) {
+      console.log(`💾 Batch updating ${medicationIds.length} medications to is_taken=true...`);
+      console.log('💾 Medication IDs being updated:', medicationIds);
       
-      // CRITICAL: Only update 'is_taken' column (last_taken_at does NOT exist in schema)
-      const { error } = await supabase
+      // Update all medications in one query using .in()
+      const { error, count } = await supabase
         .from('medications')
         .update({ is_taken: true })
-        .eq('id', medicationId);
+        .in('id', medicationIds);
 
       if (error) {
-        console.error('❌ Failed to update medication:', {
+        console.error('❌ Failed to batch update medications:', {
           error: error.message,
           details: error.details,
           hint: error.hint,
-          code: error.code
+          code: error.code,
+          medicationIds: medicationIds
         });
       } else {
-        console.log('✅ Medication updated successfully:', { medicationId, is_taken: true });
+        console.log(`✅ SUCCESS: ${count || medicationIds.length} medications marked as taken`);
+        console.log('✅ Updated medication IDs:', medicationIds);
       }
+    } else {
+      console.warn('⚠️ No medication IDs provided for database update');
+      console.warn('⚠️ This means medications will NOT be marked as taken!');
     }
   } catch (error) {
-    console.error('❌ Database update exception:', {
+    console.error('❌ Database batch update exception:', {
       error: (error as Error).message,
       stack: (error as Error).stack
     });

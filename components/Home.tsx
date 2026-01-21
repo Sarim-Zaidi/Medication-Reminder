@@ -16,7 +16,6 @@ interface HomeProps {
   onToggleMed: (id: string) => void;
   onDeleteMed: (id: string) => void;
   onAddClick: () => void;
-  onTestAlarm?: () => void;
 }
 
 // Helper function to get consistent pastel color based on medicine name
@@ -111,7 +110,7 @@ function formatTo12Hour(time: string): string {
   }
 }
 
-export default function Home({ meds, onToggleMed, onDeleteMed, onAddClick, onTestAlarm }: HomeProps) {
+export default function Home({ meds, onToggleMed, onDeleteMed, onAddClick }: HomeProps) {
   const [activeTab, setActiveTab] = useState<TimePeriod>(getCurrentTimePeriod);
 
   const nextMed = useMemo(() => {
@@ -363,16 +362,6 @@ export default function Home({ meds, onToggleMed, onDeleteMed, onAddClick, onTes
       />
 
       <View style={styles.bottomButtonsContainer}>
-        {onTestAlarm && (
-          <Pressable
-            onPress={onTestAlarm}
-            style={({ pressed }) => [styles.testAlarmButton, pressed && styles.testAlarmButtonPressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Test alarm in 5 seconds"
-          >
-            <FontAwesome6 name="bell" size={18} color="#FFFFFF" />
-          </Pressable>
-        )}
         <Pressable
           onPress={onAddClick}
           style={({ pressed }) => [styles.addButton, pressed && styles.addButtonPressed]}
@@ -801,22 +790,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     zIndex: 10,
-  },
-  testAlarmButton: {
-    backgroundColor: '#f59e0b',
-    borderRadius: 22,
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  testAlarmButtonPressed: {
-    backgroundColor: '#d97706',
   },
   addButton: {
     flex: 1,

@@ -6,8 +6,8 @@ type AuthContextType = {
   session: Session | null;
   user: User | null;
   loading: boolean;
-  sendOTP: (email: string) => Promise<{ error: Error | null }>;
-  verifyOTP: (email: string, token: string) => Promise<{ error: Error | null }>;
+  sendOTP: (phone: string) => Promise<{ error: Error | null }>;
+  verifyOTP: (phone: string, token: string) => Promise<{ error: Error | null; data: any }>;
   signOut: () => Promise<void>;
 };
 
@@ -60,18 +60,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const sendOTP = async (email: string) => {
-    const { error } = await supabase.auth.signInWithOtp({ email });
+  const sendOTP = async (phone: string) => {
+    const { error } = await supabase.auth.signInWithOtp({ phone });
     return { error };
   };
 
-  const verifyOTP = async (email: string, token: string) => {
-    const { error } = await supabase.auth.verifyOtp({
-      email,
+  const verifyOTP = async (phone: string, token: string) => {
+    const { error, data } = await supabase.auth.verifyOtp({
+      phone,
       token,
-      type: 'email',
+      type: 'sms',
     });
-    return { error };
+    return { error, data };
   };
 
   const signOut = async () => {

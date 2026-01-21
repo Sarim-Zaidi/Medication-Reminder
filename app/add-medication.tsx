@@ -16,7 +16,6 @@ import {
 import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import { router } from 'expo-router';
 import { useMedication } from '@/contexts/MedicationContext';
-import { scheduleDailyNotifeeAlarm } from '@/lib/notifications';
 import { logger } from '@/lib/logger';
 
 function isValidTime(value: string) {
@@ -75,24 +74,12 @@ export default function AddMedicationScreen() {
     setSaving(true);
     try {
       // This will create one database record for each time in the array
-      const createdMedications = await addMedication({
+      // NOTE: Notifications/calls are now handled server-side by schedule-batches cron job
+      await addMedication({
         name: name.trim(),
         dosage: dosage.trim(),
         times: times.map((t) => t.trim()),
       });
-
-      // Schedule notifications for each created medication
-      for (const med of createdMedications) {
-        const [hourStr, minuteStr] = med.time.split(':');
-        const hour = parseInt(hourStr, 10);
-        const minute = parseInt(minuteStr, 10);
-
-        await scheduleDailyNotifeeAlarm(
-          { medicationId: med.id, name: med.name, dosage: med.dosage },
-          hour,
-          minute
-        );
-      }
       
       router.back();
     } catch (error: any) {

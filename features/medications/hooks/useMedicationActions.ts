@@ -5,8 +5,6 @@
 
 import { Alert } from 'react-native';
 import { useMedication } from '@/contexts/MedicationContext';
-import { displayAlarmNotification } from '@/features/notifications/services/notificationsService';
-import type { Medication } from '@/types';
 
 export function useMedicationActions() {
   const { medications, updateMedicationStatus, deleteMedication: deleteMed } = useMedication();
@@ -30,32 +28,8 @@ export function useMedicationActions() {
     }
   };
 
-  const scheduleTestAlarm = async (medOrFallback?: Medication): Promise<void> => {
-    try {
-      const testMed = medOrFallback || medications[0] || {
-        id: 'test-id',
-        name: 'Test Medication',
-        dosage: 'Take 2 pills',
-        time: '12:00',
-        isTaken: false,
-      };
-
-      await displayAlarmNotification({
-        medicationId: testMed.id,
-        name: testMed.name,
-        dosage: testMed.dosage,
-      });
-
-      Alert.alert('Test Alarm', 'Full-screen alarm displayed immediately!');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to schedule test notification');
-      console.error('Test alarm error:', error);
-    }
-  };
-
   return {
     toggleTaken,
     deleteMedication,
-    scheduleTestAlarm,
   };
 }
